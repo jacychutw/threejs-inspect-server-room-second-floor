@@ -17,8 +17,8 @@
 ---
 
 ## 📷 預覽
-<img width="494" height="357" alt="截圖 2025-08-22 下午5 36 22" src="https://github.com/user-attachments/assets/caee3ebb-13b5-4ec7-aaa3-bf30549cc881" />
-<img width="490" height="356" alt="截圖 2025-08-22 下午5 36 13" src="https://github.com/user-attachments/assets/7cf27eda-4127-48b9-9dc0-7a42c7c44669" />
+<img width="494" height="356" alt="截圖 2025-08-22 下午5 36 22" src="https://github.com/user-attachments/assets/caee3ebb-13b5-4ec7-aaa3-bf30549cc881" />
+<img width="494" height="356" alt="截圖 2025-08-22 下午5 36 13" src="https://github.com/user-attachments/assets/7cf27eda-4127-48b9-9dc0-7a42c7c44669" />
 
 ---
 
