@@ -167,6 +167,10 @@
     import * as THREE from 'https://esm.sh/three@0.164.1';
     import { GLTFLoader } from 'https://esm.sh/three@0.164.1/examples/jsm/loaders/GLTFLoader.js';
     import { CSS2DRenderer, CSS2DObject } from 'https://esm.sh/three@0.164.1/examples/jsm/renderers/CSS2DRenderer.js';
+    import { KTX2Loader } from 'https://esm.sh/three@0.164.1/examples/jsm/loaders/KTX2Loader.js';
+    import { MeshoptDecoder } from 'https://esm.sh/three@0.164.1/examples/jsm/libs/meshopt_decoder.module.js';
+
+    let didLoadTags = false;
 
     // ===== 場景基礎 =====
     const scene = new THREE.Scene();
@@ -257,18 +261,36 @@
       card.querySelector('.closeBtn')?.addEventListener('click', ev => { ev.stopPropagation(); rec.open = false; syncTagVisibility(rec); });
       card.querySelector('.editBtn')?.addEventListener('click', ev => {
         ev.stopPropagation(); const body = card.querySelector('.body'); const v = prompt('編輯標註內容：', body ? body.innerText : '');
-        if (v != null) body.innerHTML = String(v).replace(/\n/g, '<br/>');
+        if (v != null) {
+          body.innerHTML = String(v).replace(/\n/g, '<br/>');
+          saveTags();
+        }
       });
-      card.querySelector('.deleteBtn')?.addEventListener('click', ev => { ev.stopPropagation(); scene.remove(dotObj); scene.remove(cardObj); dot.remove(); card.remove(); });
+      card.querySelector('.deleteBtn')?.addEventListener('click', ev => { ev.stopPropagation(); scene.remove(dotObj); scene.remove(cardObj); dot.remove(); card.remove();
+      const idx = tags.indexOf(rec);
+      if (idx >= 0) tags.splice(idx, 1);
+      saveTags();
+      });
 
-      tags.push(rec); syncTagVisibility(rec); return rec;
+      tags.push(rec); syncTagVisibility(rec);
+      saveTags();
+      return rec;
     }
     function closeAllTags() {
       let closed = false; for (const t of tags) if (t.open) { t.open = false; syncTagVisibility(t); closed = true; } return closed;
     }
 
+    const ktx2 = new KTX2Loader()
+      .setTranscoderPath('https://unpkg.com/three@0.164.1/examples/jsm/libs/basis/')  // or 改成你自己主機的路徑
+      .detectSupport(renderer);
+
     // ===== 載入兩層 =====
     const loader = new GLTFLoader();
+    // loader.setKTX2Loader(ktx2);        // 讓 GLTFLoader 會解 .ktx2
+    loader.setMeshoptDecoder(MeshoptDecoder); // 你之後若有用 Meshopt 也能解
+    loader.setKTX2Loader(ktx2);
+    ktx2.detectSupport(renderer);
+
     const EYE_HEIGHT = 1.6;
 
     // 1F：server_room.glb
@@ -289,10 +311,15 @@
         updateFloorVisibility();
         initMinimap(f1.sceneSize, f1.floorY);
       }
+
+      f1.group.position.y = f1.floorY + f1.sceneSize.y / 2; // 將地板對齊到 floorY
+
+      relayoutSecondFloorIfNeeded();
+      if (!didLoadTags) { didLoadTags = true; loadTags(); }
     });
 
     // 2F：meeting_room.glb
-    loader.load('models/meeting_room.glb', (gltf) => {
+    loader.load('models/meeting_room_compressed.glb', (gltf) => {
       const base = gltf.scene;
       const box = new THREE.Box3().setFromObject(base);
       const c = new THREE.Vector3(); box.getCenter(c); base.position.sub(c);
@@ -302,10 +329,15 @@
       // 疊到 1F 上方（留 0.4m 縫）
       const gap = 0.4;
       const f2FloorY = floors[0] ? floors[0].floorY + floors[0].sceneSize.y + gap : 0;
-      base.position.y += (floors[0] ? floors[0].sceneSize.y + gap : 0);
+      // base.position.y += (floors[0] ? floors[0].sceneSize.y + gap : 0);
 
       const f2 = buildFloorFrom(base, f2FloorY, sceneSize, /*floorIdx=*/1);
       floors[1] = f2; f2.group.visible = false; scene.add(f2.group);
+
+      f2.group.position.y = f2.floorY + f2.sceneSize.y / 2; // 將地板對齊到 floorY
+
+      relayoutSecondFloorIfNeeded();
+      if (!didLoadTags) { didLoadTags = true; loadTags(); }
     });
 
     // ===== 依樓層建立資料（重點：1F/2F 不同的「天花候選」規則）=====
@@ -366,6 +398,25 @@
       return { group, pickables, colliders, roofCandidates, moveBounds, floorY, sceneSize };
     }
 
+    const GAP = 0.4;
+
+    function relayoutSecondFloorIfNeeded() {
+      const f1 = floors[0], f2 = floors[1];
+      if (!f1 || !f2) return;
+
+      const desiredFloorY = f1.floorY + f1.sceneSize.y + GAP;     // 期望 2F 地板世界座標
+      const desiredGroupY = desiredFloorY + f2.sceneSize.y / 2;    // 對應的 group 世界座標
+
+      if (Math.abs(f2.group.position.y - desiredGroupY) > 1e-4) {
+        f2.group.position.y = desiredGroupY; // 直接放到正確位置
+        f2.floorY = desiredFloorY;           // 記錄正確的地板 Y
+
+        if (activeFloorIdx === 1) {
+          camera.position.y = f2.floorY + EYE_HEIGHT; // 若在 2F，同步拉相機
+        }
+      }
+    }
+
     function updateFloorVisibility() {
       floors.forEach((f, i) => { if (f) f.group.visible = (i === activeFloorIdx); });
       const badge = document.getElementById('mapBadge');
@@ -385,6 +436,7 @@
     let velocity = new THREE.Vector3();
     const speed = 2.0, rotationSpeed = 1.5, lookSpeed = 1.0;
     let moveStartTime = 0, moveInProgress = false, last = performance.now();
+    let sprint = false; // Shift 衝刺
 
     document.addEventListener('keydown', e => {
       if (e.code === 'KeyZ') switchFloor(0);
@@ -410,6 +462,13 @@
         case 'KeyQ': lookUp = false; break;
         case 'KeyE': lookDown = false; break;
       }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') sprint = true;
+    });
+    document.addEventListener('keyup', e => {
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') sprint = false;
     });
 
     function bindHoldButton(id, onDown, onUp) {
@@ -456,8 +515,13 @@
       const backward = forward.clone().negate();
 
       const elapsed = (now - moveStartTime) / 1000;
-      if (elapsed <= 2) { if (moveForward) velocity.addScaledVector(forward, speed * dt); if (moveBackward) velocity.addScaledVector(backward, speed * dt); }
-      else { moveInProgress = false; }
+      const speedMul = sprint ? 2.6 : 1.0; // 衝刺倍率
+      if (elapsed <= 2) {
+        if (moveForward) velocity.addScaledVector(forward, speed * speedMul * dt);
+        if (moveBackward) velocity.addScaledVector(backward, speed * speedMul * dt);
+      } else {
+        moveInProgress = false;
+      }
 
       if (!willCollide(camera.position, velocity)) camera.position.add(velocity);
 
@@ -539,7 +603,7 @@
       miniCam.layers.enable(2); // 前面有 m.layers.set(2); 小地圖使用圖層
     }
 
-    const MINIMAP_CLIP_HEIGHT_2F = 2.8;
+    const MINIMAP_CLIP_HEIGHT_2F = 2;
 
     function renderMinimap() {
       if (!miniRenderer || !miniCam || !floors.length) return;
@@ -599,6 +663,46 @@
       // 7) 還原狀態
       for (const [obj, vis] of prev) obj.visible = vis;
       miniRenderer.clippingPlanes = [];
+    }
+
+    const STORAGE_KEY = 'twofloors_tags_v1';
+
+    // 存所有標註
+    function saveTags() {
+      try {
+        const data = tags.map(t => ({
+          floorIdx: t.floorIdx,
+          // dotObj 直接掛在 scene 上，所以 position 是世界座標，存起來即可
+          pos: t.dotObj.position.toArray(),
+          title: t.cardObj.element.querySelector('strong')?.innerText || '標註',
+          html: t.cardObj.element.querySelector('.body')?.innerHTML || ''
+        }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch (e) {
+        console.warn('saveTags failed:', e);
+      }
+    }
+
+    // 從 localStorage 還原
+    function loadTags() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        const prev = activeFloorIdx;
+
+        for (const item of data) {
+          const { floorIdx = 0, pos = [0, 0, 0], title = '標註', html = '' } = item || {};
+          // 暫切樓層 → addTag 會把 floorIdx 設成 activeFloorIdx
+          activeFloorIdx = floorIdx;
+          addTag(new THREE.Vector3().fromArray(pos), title, html);
+        }
+
+        activeFloorIdx = prev;
+        updateFloorVisibility();
+      } catch (e) {
+        console.warn('loadTags failed:', e);
+      }
     }
 
     // 視窗縮放
