@@ -6,6 +6,12 @@
 
 ---
 
+🔍 &nbsp; 查看：<br>
+[threejs-inspect-server-room-second-floor](https://jacychutw.github.io/threejs-inspect-server-room-second-floor/)
+
+---
+
+📝 &nbsp; 專案文件：<br>
 [Three.js 範例(3)-Two-floors導覽](https://jacychu.medium.com/three-js-%E7%AF%84%E4%BE%8B-3-two-floors%E5%B0%8E%E8%A6%BD-99c193fbcd6f)
 
 ---
