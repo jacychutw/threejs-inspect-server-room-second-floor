@@ -6,6 +6,10 @@
 
 ---
 
+[Three.js 範例(3)-Two-floors導覽](https://jacychu.medium.com/three-js-%E7%AF%84%E4%BE%8B-3-two-floors%E5%B0%8E%E8%A6%BD-99c193fbcd6f)
+
+---
+
 ## ✨ 功能特色
 - 🎮 **第一人稱移動**：鍵盤 / 螢幕按鈕控制移動、旋轉、抬頭低頭  
 - 🛑 **碰撞偵測**：不可穿牆，模擬真實移動體驗
